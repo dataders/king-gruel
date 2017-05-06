@@ -1,0 +1,62 @@
+---
+title: "King Co. Synthesis - Metia"
+author: "Anders Swanson"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output:
+  html_document:
+    depth: 3
+    toc: yes
+    theme: spacelab
+---
+#1.	Define Project Scope
+
+##The Task
+
+> Using whatever tools you have at your disposal (though ideally Power BI) we would like you to find two datasets that you can integrate (i.e. they have a meaningful primary key in common) at the site below. https://data.kingcounty.gov/browse
+
+> We’d like you to integrate, analyze, define insights, and visualize the output. No more than 2-4 hours of time should go into this – we’re looking for insight into your ‘quick take’ on data and storytelling rather than a polished solution.
+
+Based on the description of the task above, I divided the project into the six steps listed below.
+
+## Outline of Work
+1.	Define Project Scope (15 min)
+2.	Acquire Data (30 min)
+3.	Merge (& Clean) Data (45 min)
+4.	Explore Synthesized Data for Insights (45 min)
+5.	Visualize Insights  (30)
+6.  Evaluation (15 min)
+7.  Share Findings (30)
+
+#2.	Acquire Data
+
+##Explore Data.KingCounty.gov
+
+I found a few things of interest
+#3.	Merge Data
+#4.	Explore Synthesized Data for Insights
+#5.	Share Insights & Findings
+#6. Evaluation
+
+```{r load packages, message =  FALSE}
+#load necessary packages
+library(lubridate)
+library(dplyr)
+```
+
+Let's start by loading into memory the [Food Establishment Inspection Database](https://data.kingcounty.gov/Health/Food-Establishment-Inspection-Data/f29f-zza5).
+
+
+```{r get data}
+
+#download data Data directory read into memory
+download.file("https://data.kingcounty.gov/api/views/f29f-zza5/rows.csv", "./data/Food_Establishment_Inspection_Data.csv")
+
+food <-read.csv("data/Food_Establishment_Inspection_Data.csv")
+
+#create random sample of 1000 inspections
+food.sample <- food %>% sample_n(1000)
+```
+
+
+
+
