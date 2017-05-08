@@ -1,0 +1,342 @@
+---
+title: "Metia Interview Task: King County Data"
+author: "Anders Swanson"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output:
+  html_document:
+    depth: 3
+    toc: yes
+    theme: spacelab
+    code_folding: hide
+---
+
+#0. Results Summary
+
+I investigated the relationship between:
+
+* The number of daily red (i.e. critical) violations issued to restaurants by the King County Health Department
+* The number of daily adults booked into King Country jail
+
+Initially I planned to use daily restaurant closures as a variable but I incorrectly assumed that there would be more restaurants closed daily. I switched halfway through to daily red violations.
+
+###Findings
+
+I encourage you to check out some of the graphs in the report below, but my major discoveries were:
+
+1. The Health Department didn't close many restaurants during the time period in question.
+2. The weekend Boolean has moderate predictive value for both the number of jail bookings as well as the number of red violations given by the Health Department.
+3. Less red violations are issued July through September. Maybe the health inspectors are on vacation?
+4. The amount of daily jail bookings does not vary much throughout the year (excluding weekends).
+
+#1.	Define Project Scope
+
+###The Task
+
+> Using whatever tools you have at your disposal (though ideally Power BI) we would like you to find two datasets that you can integrate (i.e. they have a meaningful primary key in common) at the site below. https://data.kingcounty.gov/browse
+
+> We’d like you to integrate, analyze, define insights, and visualize the output. No more than 2-4 hours of time should go into this – we’re looking for insight into your ‘quick take’ on data and storytelling rather than a polished solution.
+
+Based on the description of the task above, I divided the project into the six steps listed below.
+
+### Outline of Work
+1.	Define Project Scope (15 min)
+2.	Acquire Data (30 min)
+3.	Clean & "Massage" Data (30 min)
+4.  Merge Data (10 min)
+5.	Explore Synthesized Data for Insights (45 min)
+6.	Summarize Insights  (15 min)
+7.  Evaluation (15 min)
+8.  Share Findings (15 min)
+
+###Task Objectives
+A successful project will:
+
+1. Include report sharing my methodology and findings
+2. Use clear, reproducible code
+3. Be completed in less than four hours
+
+
+I plan to evaluate my work against these objectives after completing the task.
+
+#2.	Acquire Data
+
+###Explore Data.KingCounty.gov
+
+I spent a lot more time than I intended exploring the possibilities. The most obvious thing to do for me would have been to combine 2012 and 2016 general election results by precinct, but I decided to do something more interesting.
+
+I ultimately decided on integrating the following two databases:
+
+* [Food Establishment Inspection Database](https://data.kingcounty.gov/Health/Food-Establishment-Inspection-Data/f29f-zza5), and
+* [Adult Jail Booking Apr 1, 2016 to Mar 31, 2017](https://data.kingcounty.gov/Jail/Adult-Jail-Booking-Apr-1-2016-to-Mar-31-2017-as-of/j56h-zgnm)
+
+I downloaded both databases as csv to be used in R.
+
+My plan is to integrate the two by the date and explore if there is any relationship between the occurrence of restaurant closures and jail bookings over time.
+
+### Set-Up
+
+First load necessary packages.
+
+```{r, message =  FALSE}
+#load necessary packages
+library(lubridate)
+library(dplyr)
+library(knitr)
+```
+
+Then load the data into memory.
+
+```{r}
+#read databases into memory
+
+food <-read.csv("data/Food_Establishment_Inspection_Data.csv")
+jail <- read.csv("data/Adult_Jail_Booking_Apr_1__2016_to_Mar_31__2017_as_of_Apr_6__2017.csv")
+```
+
+
+#3.	Clean & “Massage” Data
+
+###Food Inspection Database
+1. Convert date variable for easy manipulation
+2. Filter for time range that matches jail booking data set: 4/1/16-3/31/17
+3. Filter only for restaurant closures (i.e. Inspection.Closed.Business == TRUE)
+4. Make each row signify one restaurant closure
+5. Summarize by date and create count of restaurant closures
+6. Rename Inspection.Date column to just date
+
+```{r}
+
+closures <- food %>%
+    #convert times
+    mutate(Inspection.Date = mdy(Inspection.Date)) %>%
+    #filter for time range
+    filter(Inspection.Date >= "2016-04-01" & Inspection.Date <= "2017-03-31") %>%
+    #filter for restaurant closures
+    filter(Inspection.Closed.Business == "true") %>% #gross not boolean
+    #one row = 1 restaurant closure
+    select(Name:Inspection.Closed.Business) %>%
+    distinct(Program.Identifier, Inspection.Date) %>%
+    #summarise by date %>%
+    group_by(Inspection.Date) %>%
+    summarise(Close.Count = n_distinct(Program.Identifier)) %>%
+    #rename Inspection.Date
+    rename(Date = Inspection.Date)
+```
+
+###Jail Booking Database
+1. Convert date variables for easy manipulation
+2. Create new variable called "Date"
+3. Summarize by date and create count of bookings
+
+```{r}
+
+bookings <- jail %>%
+    #convert times
+    mutate(Booking.Date.Time = mdy_hms(Booking.Date.Time), Release.Date.Time = mdy_hms(Release.Date.Time)) %>%
+    #create Date variable
+    mutate(Date = date(Booking.Date.Time)) %>%
+    #summarise by date %>%
+    group_by(Date) %>%
+    summarise(Book.Count = n_distinct(Book.of.Arrest.Number))
+```
+
+
+
+#4.	Merge Data
+
+```{r}
+jail.food <- bookings %>% left_join(closures, by = "Date")
+```
+
+Big problem here. As you can see in the table below, there are considerably more jail bookings happening than restaurant closures in King County. Specifically, within the time frame there are 42 restaurants closed compared to 35,988 bookings made.
+```{r table 1}
+kable(head(jail.food, n = 12), caption = "Jail Bookings and Restaurant Closures By Date")
+```
+
+
+#4.5 Re-Munge & Re-Merge
+
+I could end the task here and conclude that the health department does not close many restaurants in King County, but that doesn't make for an interesting story.
+
+Perhaps it might work better to use issuance of RED (i.e. critical) violations at restaurants instead of restaurant closures.
+
+```{r}
+criticals <- food %>%
+    #convert times
+    mutate(Inspection.Date = mdy(Inspection.Date)) %>%
+    #filter for time range
+    filter(Inspection.Date >= "2016-04-01" & Inspection.Date <= "2017-03-31") %>%
+    #filter for RED violations
+    filter(Violation.Type == "red") %>%
+    #summarise by date %>%
+    group_by(Inspection.Date) %>%
+    summarise(Red.Count = n_distinct(Violation_Record_ID)) %>%
+    #rename Inspection.Date
+    rename(Date = Inspection.Date)
+```
+
+```{r}
+jail.red <- bookings %>% left_join(criticals, by = "Date")
+```
+
+
+```{r table 2}
+kable(head(jail.red, n = 12), caption = "Jail Bookings and Red Violations By Date")
+```
+
+#5. Explore Synthesized Data for Insights
+
+### Matrix Scatterplot
+To start, I always like to make matrix scatter plots to look for a direction to move in.
+
+*Note 1: 58 observations where 0 red violations occurred are excluded from this and plots below*
+
+```{r, message = FALSE}
+plot(jail.red, pch=16, col="blue", main="Matrix Scatterplot of Date, Bookings, and Red Violations")
+```
+
+The most useful scatter plots are the three in the bottom left corner. Bookings do not seem to vary with time, but red violations drop off significantly in the summer.
+
+
+### 3D Plot
+Another plot I like to make when there are three variables involved is a 3D scatter plot. It helps me see if there is any clustering happening.
+
+You can explore this plot yourself by clicking and dragging.
+
+*Note 2: 3D plot won't render on mobile devices without WebGL support. [Click here](http://i.imgur.com/duc0L0y.png) for a static image of the plot.*
+```{r, message = FALSE, warning = FALSE}
+library(plotly)
+
+q <- plot_ly(jail.red, x = ~Date, y = ~Red.Count, z = ~Book.Count,  marker = list(size = 6))
+q
+```
+
+In fact, I do see two clusters. A main cluster is clearly visible. Another cluster appears to exist when the number of bookings is less than 90 and the number of red violations is less than 12. Maybe it has to do with days of the week?
+
+```{r}
+low.red.cluster <- jail.red %>%
+    filter(Red.Count < 12 & Book.Count < 100) %>%
+    mutate(Day = wday(Date, label = TRUE)) %>%
+    group_by(Day) %>%
+    summarise(Count = n_distinct(Date))
+
+kable(low.red.cluster)
+```
+
+Suspicion confirmed. With the exception of four points in the lower cluster, the cluster represents weekends with low booking and low (non-zero) red violations.
+
+###Bookings and Red Violations by Time
+
+```{r, warning = FALSE}
+library(reshape2)
+library(ggplot2)
+
+#reshape data to long for graphing
+jail.red.long <- jail.red %>%
+    rename(Bookings = Book.Count, Red.Violations = Red.Count) %>%
+    melt(id.vars = "Date", variable.name = "Type", value.name = "Count") %>%
+    #add Weekday & Weekend columns
+    mutate(Weekday = wday(Date, label = TRUE)) %>%
+    mutate(Weekend = ifelse((Weekday == "Sat" | Weekday == "Sun"), TRUE, FALSE))
+
+#plot
+ggplot(jail.red.long, aes(Date, Count)) +
+    geom_point(aes(color = Weekend)) +
+    facet_grid(.~Type)
+``` 
+
+From this figure we can infer that:
+
+1. Both Red Violations and Jail Bookings are LOWER on the weekends.
+2. There is a summertime reduction in number of red violations issued.
+
+
+###Predicting the # of Bookings
+
+I thought it might be interesting to try to predict the number of bookings. To do so, I created four different linear regression models. I wanted to see what proportion of the variability in in the number of bookings can be explained by the variability of the time of year, the number of red violations issued, and whether or not it is the weekend
+
+Listed in the table below are the four models I made along with their respective r-squared statistics. This isn't the most statistically sound process, but I get the idea that the number of red violations and the Weekend Boolean have the most value in predicting the number of bookings on a given day.
+
+```{r}
+#model predicting Booking Count using Red Count
+book.count.lm1 <- lm(Book.Count ~ Red.Count, data = jail.red)
+r1 <- summary(book.count.lm1)$r.squared
+
+#model predicting Booking Count using Red Count and Date
+book.count.lm2 <- lm(Book.Count ~ Red.Count + Date, data = jail.red)
+r2 <- summary(book.count.lm2)$adj.r.squared
+
+jail.red.days <- jail.red %>%
+    #add Weekday & Weekend columns
+    mutate(Weekday = wday(Date, label = TRUE)) %>%
+    mutate(Weekend = ifelse((Weekday == "Sat" | Weekday == "Sun"), TRUE, FALSE))
+
+#model predicting Booking Count using Red Count and Weekend
+book.count.lm3 <- lm(Book.Count ~ Red.Count + factor(Weekend), data = jail.red.days)
+r3 <- summary(book.count.lm3)$adj.r.squared
+
+
+#model predicting Booking Count using Red Count and Weekend
+book.count.lm4 <- lm(Book.Count ~ Red.Count + factor(Weekend) + Date, data = jail.red.days)
+r4 <- summary(book.count.lm4)$adj.r.squared
+
+Predictors <- c("Red.Count", "Red.Count + Date", "Red.Count + Weekend", "Red.Count + Weekend + Date")
+r.squared <- c(r1, r2, r3, r4)
+kable(data.frame(Predictors, r.squared))
+```
+
+
+
+#6.	Summarize Insights
+
+The big takeaways are as follows:
+
+1. The Health Department didn't close many restaurants during the time period in question.
+2. The weekend Boolean has moderate predictive value for both the number of jail bookings as well as the number of red violations given by the Health Department.
+3. Less red violations are issued July through September. Maybe the health inspectors are on vacation?
+4. The amount of daily jail bookings does not vary much throughout the year (excluding weekends).
+
+More Questions:
+
+1. What other factors might influence the number of jail bookings?
+2. How is this data distributed geographically across Seattle?
+3. How can I use the [city of Chicago's findings](https://github.com/Chicago/food-inspections-evaluation) to predict where red violations might next occur in Seattle?
+
+
+Next Steps:
+
+1. I am very willing and interested to repeat this task using Microsoft BI, if necessary.
+2. I would love to build a predictive model integrating other data sets and map the results geographically.
+3. Also I bet a breakdown of types of crimes would be similarly interesting.
+
+#7. Evaluation: Completion of Task Objectives
+
+###1. Include report sharing my methodology and findings
+
+* Thorough report created
+* Methodology explicitly stated accompanied by code
+* Findings clearly communicated
+
+###2. Use clear, reproducible code
+
+* Code is shared (but hidden by default)
+* To reproduce results, download both databases and the [rmarkdown file from my Dropbox](https://www.dropbox.com/s/rjf5fneqjwlzlmn/king-food-jail.Rmd?dl=0) 
+* Extending task completion time would result in more descriptive code comments
+
+###3. Be completed in less than four hours
+
+* Successfully completed in under four hours
+* Extra time looking for databases that could be integrated meaningfully
+* Spent some time editing grammar and structure.
+* Table below shows that my actual progress mapped fairly closely to my planned progress.
+
+```{r}
+time <- read.csv("timesheet.csv") 
+kable(data.frame(time))
+```
+
+#8. Share Findings
+
+* Wrote summary for quick insight
+* `rmarkdown` and `knitr` packages allow for easy sharing of method and findings
+* Spent time ensuring clear, direct communication
